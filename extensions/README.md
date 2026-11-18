@@ -1,6 +1,10 @@
 # E2BX 扩展
 
-这里存放 E2BX 自己定义的协议。当前阶段仅收录上游基线，扩展目录预留给后续提案。现有接口见[基线索引](../README.md)。
+这里维护 E2BX 私有扩展。上游原始接口见[基线索引](../README.md)。
+
+| 扩展 | 协议面 | 用途 |
+| --- | --- | --- |
+| [release-capture v1](release-capture/v1/README.md) · [OpenAPI](release-capture/v1/openapi.yml) | 控制面 REST | 释放沙箱时请求浮动快照，并按租户查询发布结果。 |
 
 新增能力时，可在 `extensions/<能力名>/v1/` 放一份 OpenAPI 或 `.proto`，并附最短的请求和响应示例。建议在说明中回答三个问题：
 

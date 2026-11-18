@@ -1,0 +1,153 @@
+openapi: 3.0.3
+info:
+  title: E2BX release capture
+  version: 1.0.0
+  description: Optional control-plane extension implemented by the Slot Pool lifecycle gateway.
+security:
+  - TenantKey: []
+paths:
+  /sandboxes/{sandboxID}:
+    delete:
+      summary: Release a sandbox with an optional floating snapshot
+      description: >-
+        An absent or empty policy has the same effect as none. With floating,
+        acceptance logically deletes the sandbox. Retrying floating for the same
+        tenant and sandbox replays the durable acceptance, even after deletion.
+        Follow state_url on the same gateway to learn the publication outcome.
+      parameters:
+        - name: sandboxID
+          in: path
+          required: true
+          description: Sandbox ID returned by the gateway.
+          schema: {type: string}
+        - name: X-Sandbox-Capture
+          in: header
+          required: false
+          schema: {type: string, enum: ['', none, floating]}
+      responses:
+        '202':
+          description: Floating capture accepted or previous acceptance replayed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Accepted'}
+              example: {capture_id: '0123456789abcdef0123456789abcdef', state_url: /captures/0123456789abcdef0123456789abcdef}
+        '204': {description: Ordinary release succeeded. The response body is empty.}
+        '400':
+          description: Unknown policy (invalid capture policy) or floating capture disabled (capture unavailable). The sandbox is retained.
+          content: &errorBody
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Sandbox unknown or outside this tenant's scope.
+          content: *errorBody
+        '409':
+          description: Binding cannot be captured (capture not possible). The sandbox is retained.
+          content: *errorBody
+        '429': {$ref: '#/components/responses/Busy'}
+        '500':
+          description: capture failed to start
+          content: *errorBody
+        '503':
+          description: Gateway closed or ordinary sandbox retirement failed.
+          content: *errorBody
+  /v2/sandboxes/{sandboxID}:
+    $ref: '#/paths/~1sandboxes~1%7BsandboxID%7D'
+  /captures/{id}:
+    description: Read-only resource. Other methods return 405 (method not allowed). This resource has only the unversioned path.
+    get:
+      summary: Read the authenticated tenant's durable capture state
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/CaptureID'}
+      responses:
+        '200':
+          description: Current state. Poll while in_progress. A failed publication leaves the logical deletion in effect.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/InProgress'}
+                  - {$ref: '#/components/schemas/Committed'}
+                  - {$ref: '#/components/schemas/Failed'}
+              examples:
+                pending:
+                  value: {capture_id: '0123456789abcdef0123456789abcdef', state: in_progress}
+                published:
+                  value: {capture_id: '0123456789abcdef0123456789abcdef', state: committed, seq: 1}
+                failed:
+                  value: {capture_id: '0123456789abcdef0123456789abcdef', state: failed, reason: upload_failed}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Invalid, unknown or other-tenant capture ID, or capture lookup disabled (capture not found).
+          content: *errorBody
+        '429': {$ref: '#/components/responses/Busy'}
+        '500':
+          description: capture state unavailable
+          content: *errorBody
+        '503':
+          description: Gateway closed.
+          content: *errorBody
+components:
+  securitySchemes:
+    TenantKey: {type: apiKey, in: header, name: X-API-Key}
+  responses:
+    Unauthorized:
+      description: Invalid or missing API key.
+      content: *errorBody
+    Forbidden:
+      description: Untrusted Host.
+      content: *errorBody
+    Busy:
+      description: Gateway request concurrency limit reached.
+      content: *errorBody
+  schemas:
+    CaptureID:
+      type: string
+      minLength: 32
+      maxLength: 32
+      pattern: '^[0-9a-f]{32}$'
+    Accepted:
+      type: object
+      required: [capture_id, state_url]
+      properties:
+        capture_id: {$ref: '#/components/schemas/CaptureID'}
+        state_url:
+          type: string
+          description: Same-origin path ending in the capture_id from this response.
+          pattern: '^/captures/[0-9a-f]{32}$'
+    InProgress:
+      type: object
+      additionalProperties: false
+      required: [capture_id, state]
+      properties:
+        capture_id: {$ref: '#/components/schemas/CaptureID'}
+        state: {type: string, enum: [in_progress]}
+    Committed:
+      type: object
+      additionalProperties: false
+      required: [capture_id, state, seq]
+      properties:
+        capture_id: {$ref: '#/components/schemas/CaptureID'}
+        state: {type: string, enum: [committed]}
+        seq: {type: integer, minimum: 1, maximum: 18446744073709551615}
+    Failed:
+      type: object
+      additionalProperties: false
+      required: [capture_id, state, reason]
+      properties:
+        capture_id: {$ref: '#/components/schemas/CaptureID'}
+        state: {type: string, enum: [failed]}
+        reason:
+          type: string
+          enum: [sampling_inconsistent, journal_unavailable, quiesce_failed, capture_failed, upload_failed, publish_conflict, timeout, controller_restart, internal]
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: integer, description: HTTP status code.}
+        message: {type: string}

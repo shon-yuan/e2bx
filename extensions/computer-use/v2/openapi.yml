@@ -1,0 +1,149 @@
+openapi: 3.0.3
+info:
+  title: E2BX Native Computer Use HTTP
+  version: 2.0.0
+  description: Native CUA interface from the locally verified rust-envd implementation.
+security:
+  - EnvdAccessToken: []
+paths:
+  /cua/tools:
+    get:
+      summary: Discover native desktop tools
+      responses:
+        '200':
+          description: Tools and their input schemas.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools:
+                    type: array
+                    items: {$ref: '#/components/schemas/Tool'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /cua/call:
+    post:
+      summary: Invoke one native desktop tool
+      description: >-
+        Requires one application/json Content-Type header. Content-Encoding is
+        unsupported. Request limit is 1 MiB; serialized response limit is 32 MiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, arguments]
+              properties:
+                name: {type: string, minLength: 1}
+                arguments: {type: object}
+            example: {name: get_screen_size, arguments: {}}
+      responses:
+        '200':
+          description: Tool result. A driver-reported failure has success false.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ToolResult'}
+              example: {success: true, content: [{type: text, text: Screen size available}], data: null}
+        '400':
+          description: Invalid call JSON or invalid tool arguments.
+          content: &errorBody
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404':
+          description: Unknown tool.
+          content: *errorBody
+        '413':
+          description: Request exceeds 1 MiB.
+          content: *errorBody
+        '415':
+          description: Invalid media type or unsupported content encoding.
+          content: *errorBody
+        '429':
+          description: The execution slot is busy.
+          content: *errorBody
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504':
+          description: Execution exceeded its 30-second deadline. The action may still hold the execution slot until it finishes.
+          content: *errorBody
+  /cua/health:
+    get:
+      summary: Report CUA runtime availability without acting on the desktop
+      responses:
+        '200':
+          description: CUA runtime is available.
+          content: &healthBody
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503':
+          description: CUA runtime is unavailable.
+          content: *healthBody
+  /cua/metrics:
+    get:
+      summary: Read CUA tool counters, latency and runtime readiness
+      responses:
+        '200':
+          description: Prometheus text exposition format 0.0.4.
+          content:
+            text/plain:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+components:
+  securitySchemes:
+    EnvdAccessToken:
+      type: apiKey
+      in: header
+      name: X-Access-Token
+      description: Current access token from initialized envd.
+  responses:
+    Unauthorized:
+      description: Authentication missing, ambiguous or invalid, or envd has no initialized access token.
+      content: *errorBody
+    InternalError:
+      description: Internal error or response encoding or size failure.
+      content: *errorBody
+    Unavailable:
+      description: CUA runtime is unavailable.
+      content: *errorBody
+  schemas:
+    Tool:
+      type: object
+      required: [name, description, input_schema]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        input_schema: {type: object, description: Driver-provided JSON Schema for the arguments.}
+    ToolResult:
+      type: object
+      required: [success, content, data]
+      properties:
+        success: {type: boolean}
+        content:
+          type: array
+          items:
+            type: object
+            required: [type]
+            properties:
+              type: {type: string}
+              mime_type: {type: string, description: Media type on image items.}
+        data:
+          description: Driver-specific structured result or error diagnostics. May be null.
+    Health:
+      type: object
+      required: [runtime_available, reason]
+      properties:
+        runtime_available: {type: boolean}
+        reason: {type: string, nullable: true}
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: integer}
+        message: {type: string}

@@ -5,6 +5,8 @@
 | 扩展 | 协议面 | 用途 |
 | --- | --- | --- |
 | [release-capture v1](release-capture/v1/README.md) · [OpenAPI](release-capture/v1/openapi.yml) | 控制面 REST | 释放沙箱时请求浮动快照，并按租户查询发布结果。 |
+| [Computer Use v1](computer-use/v1/README.md) · [OpenAPI](computer-use/v1/openapi.yml) | guest envd HTTP / MCP | 已有 AgentHost 接入使用的桌面工具发现和调用协议。 |
+| [Computer Use v2](computer-use/v2/README.md) · [OpenAPI](computer-use/v2/openapi.yml) | guest envd 原生 HTTP | `rust-envd` 本地验证过的原生工具接口。 |
 
 新增能力时，可在 `extensions/<能力名>/v1/` 放一份 OpenAPI 或 `.proto`，并附最短的请求和响应示例。建议在说明中回答三个问题：
 

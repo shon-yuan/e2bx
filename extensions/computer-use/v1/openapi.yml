@@ -1,0 +1,60 @@
+openapi: 3.0.3
+info:
+  title: E2BX Computer Use via MCP
+  version: 1.0.0
+  description: Discovery and optional MCP ingress from the rust-envd integrated desktop implementation.
+paths:
+  /cua/info:
+    get:
+      summary: Discover the deployed Computer Use MCP endpoint
+      responses:
+        '200':
+          description: Extension information. Prefer proxy_path when the client can reach envd but cannot reach the worker loopback address.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, transport, protocol]
+                anyOf:
+                  - required: [proxy_path]
+                  - required: [mcp_url]
+                properties:
+                  name: {type: string, enum: [cua]}
+                  transport: {type: string, enum: [mcp-jsonrpc-http]}
+                  protocol: {type: string, description: Protocol identifier advertised by this deployment.}
+                  mcp_url: {type: string, format: uri, description: Direct worker endpoint when advertised.}
+                  auth: {type: string, description: Authentication advertised for mcp_url.}
+                  proxy_path: {type: string, example: /cua/mcp, description: MCP endpoint resolved against the discovery URL origin.}
+                  proxy_auth: {type: string, example: bearer}
+                  auth_source: {type: string, example: envd, description: Credential source in shared modes.}
+        '404': {description: CUA discovery is unavailable at this path.}
+  /cua/mcp:
+    post:
+      summary: Send a Computer Use MCP message through envd
+      description: >-
+        Present a Bearer token. Shared modes use the current envd access token;
+        legacy proxy mode uses its configured proxy token. Message and response
+        semantics follow MCP Streamable HTTP, including initialize, tools/list
+        and tools/call. Discover tool argument schemas with tools/list.
+      security:
+        - CuaBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: MCP reply.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+            text/event-stream:
+              schema: {type: string}
+        '202': {description: MCP notification accepted without a response body.}
+        '401': {description: Missing or invalid CUA credential.}
+        '404': {description: MCP ingress is unavailable at this path.}
+        default: {description: HTTP or MCP error as applicable.}
+components:
+  securitySchemes:
+    CuaBearer: {type: http, scheme: bearer}
